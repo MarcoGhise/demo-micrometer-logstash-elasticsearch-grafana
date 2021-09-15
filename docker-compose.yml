@@ -1,0 +1,83 @@
+version: "3"
+services:
+# Client Application on node A    
+# Waiting for Logstash container creation  
+  appA:
+    image: logging-demo:latest
+    container_name: 'logging-demo-appA'
+    build:
+      context: ./
+      dockerfile: Dockerfile
+# Node name      
+    environment:
+    - "app.node=nodeA"
+    ports:
+    - '8080:8080' 
+    depends_on:
+      logstash:
+        condition: service_healthy
+# Client Application on node B
+# Waiting for Logstash container creation             
+  appB:
+    image: logging-demo:latest
+    container_name: 'logging-demo-appB'
+    build:
+      context: ./
+      dockerfile: Dockerfile
+# Node name       
+    environment:
+    - "app.node=nodeB"
+    ports:
+    - '8081:8080'     
+    depends_on:
+      logstash:
+        condition: service_healthy
+# ElasticSearch container      
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.2
+    container_name: 'elasticsearch'
+    environment:
+    - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    - "discovery.type=single-node"   
+    ports:
+    - '9200:9200'
+    - '9300:9300'
+# Grafana container
+# Waiting for ElasticSearch container creation 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: 'grafana8'
+    ports:
+    - '3000:3000'
+    volumes:
+    - ./monitoring/grafana/:/etc/grafana/
+    environment:
+    - GF_LOG_MODE=console file 
+    - GF_LOG_LEVEL=trace
+    env_file:
+    - ./monitoring/grafana/config.monitoring
+    depends_on:
+    - elasticsearch
+# Logstash container    
+# Waiting for ElasticSearch container creation
+  logstash:
+    image: logstash:7.13.2
+    container_name: 'logstash'
+    ports:
+      - "5000:5000"
+      - "9600:9600"
+    environment:
+      XPACK_MONITORING_ELASTICSEARCH_HOSTS: "elasticsearch:9200"
+      XPACK_MONITORING_ENABLED: "true"
+# Ingestion pipeline      
+    volumes:
+      - /mnt/c/Users/d7180/git/demo-micrometer-logstash-elasticsearch-grafana/monitoring/logstash:/usr/share/logstash/pipeline    
+    depends_on:
+      - elasticsearch 
+# Healtcheck alert for Client applications      
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-XGET", "http://127.0.0.1:9600"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s       
